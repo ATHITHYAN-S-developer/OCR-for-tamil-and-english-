@@ -64,14 +64,6 @@ async function handleFile(file) {
         const formData = new FormData();
         formData.append('file', file);
 
-        // Send page range (1-indexed; backend will handle defaults)
-        const startPage = parseInt(startPageInput.value) || 1;
-        const endPageVal = endPageInput.value.trim();
-        formData.append('start_page', startPage);
-        if (endPageVal) {
-            formData.append('end_page', parseInt(endPageVal));
-        }
-
         const response = await fetch('http://localhost:5000/ocr', {
             method: 'POST',
             body: formData
