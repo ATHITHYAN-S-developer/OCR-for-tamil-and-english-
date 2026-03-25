@@ -60,104 +60,105 @@ def extract_voters_from_text(text, start_serial=1):
     lines = text.split('\n')
     serial_no = start_serial
     
+    current_serial_target = start_serial
+    
     for i, line in enumerate(lines):
-        # We look for ANY epic code in the line (RTW, FSW, ITW, SWO, etc.)
-        if re.search(r'[A-Z]{2,3}\d{6,}', line, re.IGNORECASE):
-            epics = re.findall(r'([A-Z]{2,3}\d{6,})', line, re.IGNORECASE)
-            if not epics:
+        # Trigger on potential EPICs
+        epics = re.findall(r'([A-Z0-9]{2,3}\d{4,})', line, re.IGNORECASE)
+        
+        # Fallback: if no EPIC but the line looks like a start of a row (Serial numbers)
+        # e.g. "1 2 3" or similar at the start of a block
+        if not epics:
+            # Check if line starts with something like "1 2 3" or "10 11 12"
+            serials = re.findall(r'^\s*(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})', line)
+            if serials:
+                # We found a serial row, but no EPICs yet. 
+                # We'll treat this as a trigger and look for names/fathers below.
+                # Use dummy EPICs to start the extraction
+                epics = ["GARBLED_EPIC"] * 3
+            else:
+                continue
+
+        # Vertical search for Name and Father lines (within next few lines)
+        name_parts = []
+        father_parts = []
+        
+        # 1. Search for Name Line
+        name_kw = r'(பெயர்|பெயா|பெய|பபயர்|வயர்|வயார்|வயா|வயகர்|Name)'
+        found_name_idx = -1
+        for offset in range(1, 6): # Look deeper
+            idx = i + offset
+            if idx < len(lines):
+                test_line = lines[idx]
+                if re.search(name_kw, test_line, re.IGNORECASE):
+                    found_name_idx = idx
+                    clean_l = test_line.replace('[J]', ' ').replace('[|', ' ').replace('||', ' ')
+                    clean_l = re.sub(r'[\[\]\(\)\|]', ' ', clean_l)
+                    clean_l = re.sub(r'\s+', ' ', clean_l).strip()
+                    piped = re.sub(name_kw, r'|\1', clean_l, flags=re.IGNORECASE)
+                    name_parts = [n.strip() for n in piped.split('|') if n.strip()]
+                    break
+        
+        # 2. Search for Father Line
+        father_kw = r'(தந்தையின்|தந்கையின்|தந்த்தையின்|தந்கை|தந்ததையின்|கணவர்|Father|Husband)'
+        search_start = found_name_idx + 1 if found_name_idx != -1 else i + 1
+        for idx in range(search_start, search_start + 6): 
+            if idx < len(lines):
+                test_line = lines[idx]
+                if re.search(father_kw, test_line, re.IGNORECASE):
+                    clean_l = test_line.replace('[J]', ' ').replace('[|', ' ').replace('||', ' ')
+                    clean_l = re.sub(r'[\[\]\(\)\|]', ' ', clean_l)
+                    clean_l = re.sub(r'\s+', ' ', clean_l).strip()
+                    piped = re.sub(father_kw, r'|\1', clean_l, flags=re.IGNORECASE)
+                    father_parts = [f.strip() for f in piped.split('|') if f.strip()]
+                    break
+
+        # Context for house/age/gender
+        context = '\n'.join(lines[max(0, i):min(len(lines), i+15)])
+        houses = re.findall(r'(?:வீட்டு\s*எண்|House\s*No|எண்|எஎண|எண)\s*[:\s]*([0-9/\-A-Z]+)', context, re.IGNORECASE)
+        ages = re.findall(r'(?:வயது|Age|வயத)\s*[:\s]*(\d{1,3})', context, re.IGNORECASE)
+        genders = re.findall(r'(?:பாலினம்|பாலின|Gender|பாலீனம்)\s*[:\s]*([^\s]+)', context, re.IGNORECASE)
+        
+        for j, epic in enumerate(epics):
+            # Special case: if Name and Father are both missing, this might be a false trigger
+            if j >= len(name_parts) and j >= len(father_parts):
                 continue
                 
-            context = '\n'.join(lines[max(0, i):min(len(lines), i+8)])
+            voter = {
+                'Serial No': serial_no,
+                'EPIC Number': epic.upper() if epic != "GARBLED_EPIC" else "MISSING",
+                'Name': '',
+                'Father Name': '',
+                'House No': '',
+                'Age': '',
+                'Gender': ''
+            }
             
-            # Bilingual house, age, gender with fuzzy spacing
-            houses = re.findall(r'(?:வீட்டு\s*எண்|House\s*No|எண்|எஎண|எண)\s*[:\s]*([0-9/\-A-Z]+)', context, re.IGNORECASE)
-            ages = re.findall(r'(?:வயது|Age|வயத)\s*[:\s]*(\d{1,3})', context, re.IGNORECASE)
-            genders = re.findall(r'(?:பாலினம்|பாலின|Gender|பாலீனம்)\s*[:\s]*([^\s]+)', context, re.IGNORECASE)
-            
-            # Vertical search for Name and Father lines (within next few lines)
-            name_parts = []
-            father_parts = []
-            
-            # 1. Search for Name Line
-            name_kw = r'(பெயர்|பெயா|பெய|பபயர்|வயர்|வயார்|வயா|வயகர்|Name)'
-            found_name_idx = -1
-            for offset in range(1, 4): # Look up to 3 lines ahead
-                idx = i + offset
-                if idx < len(lines):
-                    test_line = lines[idx]
-                    if re.search(name_kw, test_line, re.IGNORECASE):
-                        found_name_idx = idx
-                        # Clean and Split
-                        clean_l = test_line.replace('[J]', ' ').replace('[|', ' ').replace('||', ' ')
-                        clean_l = re.sub(r'[\[\]\(\)\|]', ' ', clean_l)
-                        clean_l = re.sub(r'\s+', ' ', clean_l).strip()
-                        piped = re.sub(name_kw, r'|\1', clean_l, flags=re.IGNORECASE)
-                        name_parts = [n.strip() for n in piped.split('|') if n.strip()]
-                        break
-            
-            # 2. Search for Father Line (from after name_line or current line)
-            father_kw = r'(தந்தையின்|தந்கையின்|தந்த்தையின்|தந்கை|தந்ததையின்|கணவர்|Father|Husband)'
-            search_start = found_name_idx + 1 if found_name_idx != -1 else i + 1
-            for idx in range(search_start, search_start + 4): # Look up to 4 lines ahead from last point
-                if idx < len(lines):
-                    test_line = lines[idx]
-                    if re.search(father_kw, test_line, re.IGNORECASE):
-                        clean_l = test_line.replace('[J]', ' ').replace('[|', ' ').replace('||', ' ')
-                        clean_l = re.sub(r'[\[\]\(\)\|]', ' ', clean_l)
-                        clean_l = re.sub(r'\s+', ' ', clean_l).strip()
-                        piped = re.sub(father_kw, r'|\1', clean_l, flags=re.IGNORECASE)
-                        father_parts = [f.strip() for f in piped.split('|') if f.strip()]
-                        break
-            
-            for j, epic in enumerate(epics):
-                voter = {
-                    'Serial No': serial_no,
-                    'EPIC Number': epic.upper(),
-                    'Name': '',
-                    'Father Name': '',
-                    'House No': '',
-                    'Age': '',
-                    'Gender': ''
-                }
-                
-                # Get Name
-                if j < len(name_parts):
-                    name = name_parts[j]
-                    # Strip the keyword prefix
-                    name = re.sub(r'^(?:பெயர்|பெயயா|பெயா|பபயர்|வயர்|வயார்|வயா|வயகர்|Name)\s*[:\s]*', '', name, flags=re.IGNORECASE)
-                    # Strip trailing garbage: dashes, brackets, pipes, underscors, Photo markers
-                    name = re.sub(r'[\s\-\[\]\|J0-9]*$', '', name).strip()
-                    name = name.split('Photo')[0].split('available')[0].strip()
-                    if len(name) > 1:
-                        voter['Name'] = name
-                        
-                # Get Father Name
-                if j < len(father_parts):
-                    father = father_parts[j]
-                    father = re.sub(r'^(?:தந்தையின்|தந்கையின்|தந்த்தையின்|தந்கை|தந்ததையின்|கணவர்|Father|Husband)\s*(?:பெயர்)?\s*[:\s]*', '', father, flags=re.IGNORECASE)
-                    father = re.sub(r'[\s\-\[\]\|J0-9]*$', '', father).strip()
-                    father = father.split('Photo')[0].split('வீட்')[0].strip()
-                    if len(father) > 1:
-                        voter['Father Name'] = father
-
-                        
-                # Assigment by index bounds (column-wise)
-                if j < len(houses):
-                    voter['House No'] = houses[j]
-                
-                if j < len(ages):
-                    voter['Age'] = ages[j]
+            if j < len(name_parts):
+                val = name_parts[j]
+                val = re.sub(f'^{name_kw}\s*[:\s]*', '', val, flags=re.IGNORECASE)
+                val = re.sub(r'[\s\-\[\]\|J0-9]*$', '', val).strip()
+                val = val.split('Photo')[0].split('available')[0].split('வீட்டு')[0].strip()
+                if len(val) > 1: voter['Name'] = val
                     
-                if j < len(genders):
-                    v_gen = genders[j]
-                    clean_gen = re.sub(r'[^a-zA-Z]', '', v_gen) # Strip Tamil letters
-                    if 'ஆண்' in v_gen or 'Male' in clean_gen:
-                        voter['Gender'] = 'Male'
-                    elif 'பெண்' in v_gen or 'Female' in clean_gen:
-                        voter['Gender'] = 'Female'
-                    else:
-                        voter['Gender'] = v_gen
-                
+            if j < len(father_parts):
+                val = father_parts[j]
+                val = re.sub(f'^{father_kw}\s*(?:பெயர்)?\s*[:\s]*', '', val, flags=re.IGNORECASE)
+                val = re.sub(r'[\s\-\[\]\|J0-9]*$', '', val).strip()
+                val = val.split('Photo')[0].split('வீட்')[0].split('வயது')[0].strip()
+                if len(val) > 1: voter['Father Name'] = val
+            
+            if j < len(houses): voter['House No'] = houses[j]
+            if j < len(ages): voter['Age'] = ages[j]
+            if j < len(genders):
+                v_gen = genders[j]
+                clean_gen = re.sub(r'[^a-zA-Z]', '', v_gen)
+                if 'ஆண்' in v_gen or 'Male' in clean_gen: voter['Gender'] = 'Male'
+                elif 'பெண்' in v_gen or 'Female' in clean_gen: voter['Gender'] = 'Female'
+                else: voter['Gender'] = v_gen
+            
+            # Avoid adding completely empty records
+            if voter['Name'] or voter['EPIC Number'] != "MISSING":
                 voters.append(voter)
                 serial_no += 1
                 
@@ -216,6 +217,13 @@ def process_ocr():
                 img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
                 if pix.n == 4: img_np = img_np[:, :, :3]
                 pil_image = Image.fromarray(img_np)
+                # Add contrast and sharpening to improve legibility
+                from PIL import ImageEnhance, ImageFilter
+                # Original image for Tamil
+                # Enhanced copy for EPIC/Numbers
+                enhancer = ImageEnhance.Contrast(pil_image)
+                pil_image = enhancer.enhance(2.0)
+                pil_image = pil_image.filter(ImageFilter.SHARPEN)
                 
                 # Use PSM 3 (Automatic) - Experiment showed PSM 6 misses EPICs
                 text = pytesseract.image_to_string(pil_image, lang='tam+eng', config='--psm 3')
