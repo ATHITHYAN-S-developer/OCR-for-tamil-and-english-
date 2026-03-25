@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tamil PDF OCR - Premium Text Extraction</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-glow"></div>
+    <div class="app-container">
+        <header>
+            <h1>Tamil PDF <span class="gradient-text">OCR</span></h1>
+            <p>Upload your PDF files and extract Tamil & English text with high accuracy.</p>
+        </header>
+
+        <main>
+            <div class="upload-section glass">
+                <div id="drop-zone" class="drop-zone">
+                    <div class="icon">📄</div>
+                    <p>Drag & Drop your PDF here or <span>Browse</span></p>
+                    <input type="file" id="file-input" accept="application/pdf,image/*" hidden>
+                </div>
+                <!-- Page Range Selection -->
+                <div class="page-range-row">
+                    <div class="page-range-group">
+                        <label for="start-page">Start Page</label>
+                        <input type="number" id="start-page" min="1" value="1" placeholder="1">
+                    </div>
+                    <div class="page-range-divider">→</div>
+                    <div class="page-range-group">
+                        <label for="end-page">End Page</label>
+                        <input type="number" id="end-page" min="1" placeholder="All">
+                    </div>
+                    <span class="page-range-hint">Leave End Page blank to process all pages</span>
+                </div>
+            </div>
+
+            <div id="status-section" class="status-section glass hidden">
+                <div class="progress-container">
+                    <div class="progress-info">
+                        <span id="current-task">Preparing PDF...</span>
+                        <span id="progress-percent">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                </div>
+                <div id="page-status" class="page-status">Page: 1/1</div>
+            </div>
+
+            <div id="results-section" class="results-section glass hidden">
+                <div class="results-header">
+                    <h2>Extracted Text</h2>
+                    <div class="actions">
+                        <button id="copy-btn" class="secondary-btn">Copy</button>
+                        <button id="download-btn" class="secondary-btn">.txt</button>
+                        <button id="download-btn" class="secondary-btn">.txt</button>
+                    </div>
+                </div>
+                <textarea id="output-text" readonly placeholder="Extracted text will appear here..."></textarea>
+            </div>
+        </main>
+
+        <footer>
+            <p>&copy; 2026 Tamil OCR Tool. Powered by Tesseract.js & PDF.js</p>
+        </footer>
+    </div>
+    <script type="module" src="main.js"></script>
+</body>
+</html>
