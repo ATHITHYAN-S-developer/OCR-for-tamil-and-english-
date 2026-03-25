@@ -64,44 +64,42 @@ def extract_voters_from_text(text, start_serial=1):
         clean_line = line.strip()
         if not clean_line: continue
             
-        # 1. Look for EPIC IDs in line
-        epics = re.findall(r'([A-Z0-9]{2,3}\d{4,})', clean_line, re.IGNORECASE)
+        # 1. Look for EPIC IDs (Fuzzy prefix: RTW, FSW, ITW, ITL, RTU, etc.)
+        # Included ாங which is common garble for RTW in Page 37
+        epics = re.findall(r'([A-Z0-9ாங]{2,4}\d{4,})', clean_line, re.IGNORECASE)
         
-        # 2. Look for Serial Numbers at start of line (1-3 digits)
-        # We look for numbers that aren't followed by "Page", "Date", or "Year"
-        # e.g. "^ 123 " or "123 RTW" or "123 பெயர்"
+        # 2. Look for Serial Numbers (1-4 digits)
         serial_matches = re.findall(r'(?:\n|^)\s*(\d{1,4})(?=\s+(?:[A-Z0-9]{3}|பெயர்|Name|வயது|Age))', '\n' + clean_line, re.MULTILINE)
         
-        # Determine effective "voter count" for this trigger line
         voter_count = max(len(epics), len(serial_matches))
-        
-        # Trigger if we found AT LEAST one EPIC or clear Serial Number
         if voter_count == 0:
-            # Special fallback for very garbled lines: check if it's just an EPIC alone
-            if re.search(r'[A-Z]{1,2}[0-9/]{3,}', clean_line):
-                epics = re.findall(r'([A-Z0-9]{2,3}\d{3,})', clean_line, re.IGNORECASE)
+            if re.search(r'[A-Z0-9ாங]{2,}[0-9/]{3,}', clean_line):
+                epics = re.findall(r'([A-Z0-9ாங]{2,4}\d{3,})', clean_line, re.IGNORECASE)
                 if not epics: continue
                 voter_count = len(epics)
-            else:
-                continue
+            else: continue
 
-        # Use epics if found, otherwise use placeholder for serial-only detection
         trigger_epics = epics if epics else ["MISSING_EPIC"] * voter_count
-
-        # Vertical search for Name and Father lines (within next few lines)
+        
+        # KEYWORDS: Expanded to cover "mother's name" and simplified "father" terms
+        name_kw = r'(பெயர்|பெயா|பெய|பபயர்|வயர்|வயார்|வயா|வயகர்|Name)'
+        father_kw = r'(தந்தையின்|தந்கையின்|தந்தை பெயர்|தந்த்தையின்|தந்கை|தந்ததையின்| தாயின் பெயர்|தாயின்|கணவர்|Father|Husband|Mother)'
+        
+        # Bidirectional search for Name and Father lines (within 13 line window)
         name_parts = []
         father_parts = []
         
-        # 1. Search for Name Line
-        name_kw = r'(பெயர்|பெயா|பெய|பபயர்|வயர்|வயார்|வயா|வயகர்|Name)'
-        found_name_idx = -1
-        # Look ahead up to 6 lines to find the names
-        for offset in range(1, 7): 
-            idx = i + offset
-            if idx < len(lines):
+        # Search outwards from EPIC anchor (0, +1, -1, +2, -2...) to find CLOSEST matches
+        offsets = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 7, -7]
+        
+        # 1. Search for Names
+        for off in offsets:
+            idx = i + off
+            if 0 <= idx < len(lines):
                 test_line = lines[idx]
+                if "ஈரோடு" in test_line or "சட்டமன்ற" in test_line or "பாகம்" in test_line:
+                    continue
                 if re.search(name_kw, test_line, re.IGNORECASE):
-                    found_name_idx = idx
                     cl = test_line.replace('[J]', ' ').replace('[|', ' ').replace('||', ' ')
                     cl = re.sub(r'[\[\]\(\)\|]', ' ', cl)
                     cl = re.sub(r'\s+', ' ', cl).strip()
@@ -109,12 +107,13 @@ def extract_voters_from_text(text, start_serial=1):
                     name_parts = [n.strip() for n in piped.split('|') if n.strip()]
                     break
         
-        # 2. Search for Father Line
-        father_kw = r'(தந்தையின்|தந்கையின்|தந்த்தையின்|தந்கை|தந்ததையின்|கணவர்|Father|Husband)'
-        search_start = found_name_idx + 1 if found_name_idx != -1 else i + 1
-        for idx in range(search_start, search_start + 7): 
-            if idx < len(lines):
+        # 2. Search for Fathers
+        for off in offsets:
+            idx = i + off
+            if 0 <= idx < len(lines):
                 test_line = lines[idx]
+                if "ஈரோடு" in test_line or "சட்டமன்ற" in test_line:
+                    continue
                 if re.search(father_kw, test_line, re.IGNORECASE):
                     cl = test_line.replace('[J]', ' ').replace('[|', ' ').replace('||', ' ')
                     cl = re.sub(r'[\[\]\(\)\|]', ' ', cl)
@@ -123,26 +122,20 @@ def extract_voters_from_text(text, start_serial=1):
                     father_parts = [f.strip() for f in piped.split('|') if f.strip()]
                     break
 
-        # Context for house/age/gender - slightly wider window for multi-voter rows
-        context = '\n'.join(lines[max(0, i):min(len(lines), i+15)])
+        # Context for house/age/gender (15 line window)
+        context = '\n'.join(lines[max(0, i-8):min(len(lines), i+9)])
         houses = re.findall(r'(?:வீட்டு\s*எண்|House\s*No|எண்|எஎண|எண)\s*[:\s]*([0-9/\-A-Z]+)', context, re.IGNORECASE)
         ages = re.findall(r'(?:வயது|Age|வயத)\s*[:\s]*(\d{1,3})', context, re.IGNORECASE)
         genders = re.findall(r'(?:பாலினம்|பாலின|Gender|பாலீனம்)\s*[:\s]*([^\s]+)', context, re.IGNORECASE)
         
         for j in range(voter_count):
             epic = trigger_epics[j] if j < len(trigger_epics) else "MISSING"
-            
             voter = {
                 'Serial No': serial_no,
                 'EPIC Number': epic.upper() if epic != "MISSING_EPIC" else "MISSING",
-                'Name': '',
-                'Father Name': '',
-                'House No': '',
-                'Age': '',
-                'Gender': ''
+                'Name': '', 'Father Name': '', 'House No': '', 'Age': '', 'Gender': ''
             }
             
-            # Name assignment
             if j < len(name_parts):
                 val = name_parts[j]
                 val = re.sub(f'^{name_kw}\s*[:\s]*', '', val, flags=re.IGNORECASE)
@@ -150,7 +143,6 @@ def extract_voters_from_text(text, start_serial=1):
                 val = val.split('Photo')[0].split('available')[0].split('வீட்டு')[0].strip()
                 if len(val) > 1: voter['Name'] = val
                     
-            # Father assignment
             if j < len(father_parts):
                 val = father_parts[j]
                 val = re.sub(f'^{father_kw}\s*(?:பெயர்)?\s*[:\s]*', '', val, flags=re.IGNORECASE)
@@ -158,7 +150,6 @@ def extract_voters_from_text(text, start_serial=1):
                 val = val.split('Photo')[0].split('வீட்')[0].split('வயது')[0].strip()
                 if len(val) > 1: voter['Father Name'] = val
             
-            # Match metadata from context by relative count
             if j < len(houses): voter['House No'] = houses[j]
             if j < len(ages): voter['Age'] = ages[j]
             if j < len(genders):
@@ -168,7 +159,6 @@ def extract_voters_from_text(text, start_serial=1):
                 elif 'பெண்' in v_gen or 'Female' in clean_gen: voter['Gender'] = 'Female'
                 else: voter['Gender'] = v_gen
             
-            # Validation: Don't add completely empty records
             if voter['Name'] or voter['EPIC Number'] != "MISSING":
                 voters.append(voter)
                 serial_no += 1
