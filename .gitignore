@@ -1,0 +1,17 @@
+# Node
+node_modules/
+dist/
+.env
+
+# Python
+venv/
+venv_new/
+__pycache__/
+*.py[cod]
+*$py.class
+voters.db
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
