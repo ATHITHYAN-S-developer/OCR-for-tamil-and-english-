@@ -191,14 +191,10 @@ def process_ocr():
         
         if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
             img = Image.open(temp_path)
-            # Preprocessing: Convert to grayscale and improve contrast
-            img = img.convert('L')
-            from PIL import ImageOps
-            img = ImageOps.invert(img) # Invert if necessary (usually black on white is better for Tesseract)
-            img = ImageOps.invert(img) 
             # Upscale images to improve OCR clarity
             img = img.resize((img.width * 2, img.height * 2), Image.Resampling.LANCZOS)
-            text = pytesseract.image_to_string(img, lang='tam+eng', config='--psm 6')
+            # Use PSM 3 (Automatic) which is more robust for finding EPICs
+            text = pytesseract.image_to_string(img, lang='tam+eng', config='--psm 3')
             voters, _ = extract_voters_from_text(text)
             final_voters = voters
             final_text = text
@@ -215,15 +211,14 @@ def process_ocr():
             current_serial = 1
             for page_num in range(start_page, end_page):
                 page = doc[page_num]
-                # High resolution 4x matrix for better Tesseract detection
+                # High resolution 4x matrix
                 pix = page.get_pixmap(matrix=fitz.Matrix(4, 4))
                 img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
                 if pix.n == 4: img_np = img_np[:, :, :3]
                 pil_image = Image.fromarray(img_np)
-                # Grayscale for OCR
-                pil_image = pil_image.convert('L')
                 
-                text = pytesseract.image_to_string(pil_image, lang='tam+eng', config='--psm 6')
+                # Use PSM 3 (Automatic) - Experiment showed PSM 6 misses EPICs
+                text = pytesseract.image_to_string(pil_image, lang='tam+eng', config='--psm 3')
                 voters, next_serial = extract_voters_from_text(text, start_serial=current_serial)
                 current_serial = next_serial
                 
