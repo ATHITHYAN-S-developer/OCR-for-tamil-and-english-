@@ -74,28 +74,40 @@ def extract_voters_from_text(text, start_serial=1):
             ages = re.findall(r'(?:வயது|Age|வயத)\s*[:\s]*(\d{1,3})', context, re.IGNORECASE)
             genders = re.findall(r'(?:பாலினம்|பாலின|Gender|பாலீனம்)\s*[:\s]*([^\s]+)', context, re.IGNORECASE)
             
-            name_line = lines[i+1] if i+1 < len(lines) else ''
-            father_line = lines[i+2] if i+2 < len(lines) else ''
+            # Vertical search for Name and Father lines (within next few lines)
+            name_parts = []
+            father_parts = []
             
-            # Clean lines from all possible OCR border artifacts FIRST
-            # This ensures only keywords remain for splitting
-            for line_ref in ['name_line', 'father_line']:
-                l = locals()[line_ref]
-                # Replace artifacts with space to preserve offsets
-                l = l.replace('[J]', ' ').replace('[|', ' ').replace('||', ' ')
-                l = re.sub(r'[\[\]\(\)\|]', ' ', l)
-                l = re.sub(r'\s+', ' ', l).strip()
-                locals()[line_ref] = l
+            # 1. Search for Name Line
+            name_kw = r'(பெயர்|பெயா|பெய|பபயர்|வயர்|வயார்|வயா|வயகர்|Name)'
+            found_name_idx = -1
+            for offset in range(1, 4): # Look up to 3 lines ahead
+                idx = i + offset
+                if idx < len(lines):
+                    test_line = lines[idx]
+                    if re.search(name_kw, test_line, re.IGNORECASE):
+                        found_name_idx = idx
+                        # Clean and Split
+                        clean_l = test_line.replace('[J]', ' ').replace('[|', ' ').replace('||', ' ')
+                        clean_l = re.sub(r'[\[\]\(\)\|]', ' ', clean_l)
+                        clean_l = re.sub(r'\s+', ' ', clean_l).strip()
+                        piped = re.sub(name_kw, r'|\1', clean_l, flags=re.IGNORECASE)
+                        name_parts = [n.strip() for n in piped.split('|') if n.strip()]
+                        break
             
-            name_line = locals()['name_line']
-            father_line = locals()['father_line']
-            
-            # Expanded Split Keywords (common OCR misreads included)
-            name_line_piped = re.sub(r'(பெயர்|பெயயா|பெயா|பபயர்|வயர்|வயார்|வயா|வயகர்|Name)', r'|\1', name_line, flags=re.IGNORECASE)
-            name_parts = [n.strip() for n in name_line_piped.split('|') if n.strip()]
-            
-            father_line_piped = re.sub(r'(தந்தையின்|தந்கையின்|தந்த்தையின்|தந்கை|தந்ததையின்|கணவர்|Father|Husband)', r'|\1', father_line, flags=re.IGNORECASE)
-            father_parts = [f.strip() for f in father_line_piped.split('|') if f.strip()]
+            # 2. Search for Father Line (from after name_line or current line)
+            father_kw = r'(தந்தையின்|தந்கையின்|தந்த்தையின்|தந்கை|தந்ததையின்|கணவர்|Father|Husband)'
+            search_start = found_name_idx + 1 if found_name_idx != -1 else i + 1
+            for idx in range(search_start, search_start + 4): # Look up to 4 lines ahead from last point
+                if idx < len(lines):
+                    test_line = lines[idx]
+                    if re.search(father_kw, test_line, re.IGNORECASE):
+                        clean_l = test_line.replace('[J]', ' ').replace('[|', ' ').replace('||', ' ')
+                        clean_l = re.sub(r'[\[\]\(\)\|]', ' ', clean_l)
+                        clean_l = re.sub(r'\s+', ' ', clean_l).strip()
+                        piped = re.sub(father_kw, r'|\1', clean_l, flags=re.IGNORECASE)
+                        father_parts = [f.strip() for f in piped.split('|') if f.strip()]
+                        break
             
             for j, epic in enumerate(epics):
                 voter = {
