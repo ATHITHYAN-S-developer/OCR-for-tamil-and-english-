@@ -92,12 +92,15 @@ def extract_voters_from_text(text, start_serial=1):
         # Search outwards from EPIC anchor (0, +1, -1, +2, -2...) to find CLOSEST matches
         offsets = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 7, -7]
         
-        # 1. Search for Names
+        # 1. Search for Names (Skip if it looks like a father/mother line)
         for off in offsets:
             idx = i + off
             if 0 <= idx < len(lines):
                 test_line = lines[idx]
                 if "ஈரோடு" in test_line or "சட்டமன்ற" in test_line or "பாகம்" in test_line:
+                    continue
+                # If it matches father_kw, it should be reserved for the father search
+                if re.search(father_kw, test_line, re.IGNORECASE):
                     continue
                 if re.search(name_kw, test_line, re.IGNORECASE):
                     cl = test_line.replace('[J]', ' ').replace('[|', ' ').replace('||', ' ')
